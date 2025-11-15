@@ -1,3 +1,5 @@
+## FileWhole on Android
+
 FileWhole是一个全文检索软件，包含Windows版，安卓版和鸿蒙版
 
 本仓库为FileWhole的安卓Demo版本
