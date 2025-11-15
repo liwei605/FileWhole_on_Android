@@ -1,11 +1,10 @@
 package com.example.myapplication
 
 import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,8 +24,9 @@ data class MainUiState(
     val isSearching: Boolean = false,
 
     // 系统设置 / 索引配置
-    val selectedDirectory: String = "未选择",
-    val selectedExtensions: List<String> = listOf("pdf", "docx", "txt"),
+    val selectedDirectory: String = "未选择",           // 展示给用户看的名称
+    val selectedDirectoryUri: String? = null,          // SAF 的 Uri 字符串
+    val selectedExtensions: List<String> = listOf("txt"), // 先只做 txt，方便扩展
     val isIndexing: Boolean = false,
     val indexProgress: Float = 0f
 )
@@ -104,34 +104,49 @@ class MainViewModel(
 
     /* ---------- 系统设置 / 索引板块 ---------- */
 
-    fun setSelectedDirectory(path: String) {
-        _uiState.update { it.copy(selectedDirectory = path) }
+    /** 用户选择了目录之后调用 */
+    fun setSelectedDirectory(uri: Uri, displayName: String) {
+        _uiState.update {
+            it.copy(
+                selectedDirectory = displayName,
+                selectedDirectoryUri = uri.toString()
+            )
+        }
     }
 
     fun setSelectedExtensions(exts: List<String>) {
         _uiState.update { it.copy(selectedExtensions = exts) }
     }
 
-    /** 索引进度模拟（以后可以换成真实目录扫描逻辑） */
+    /**
+     * 开始构建索引：扫描 selectedDirectoryUri 下的所有 txt 文件并写入数据库，
+     * 同时根据处理进度更新进度条。
+     */
     fun startIndexing() {
         val state = _uiState.value
         if (state.isIndexing) return
 
-        viewModelScope.launch(Dispatchers.IO) {
+        val uriString = state.selectedDirectoryUri ?: return
+
+        viewModelScope.launch {
             _uiState.update { it.copy(isIndexing = true, indexProgress = 0f) }
 
-            repeat(20) { step ->
-                delay(150)
-                val progress = (step + 1) / 20f.toFloat()
+            val uri = Uri.parse(uriString)
+            val exts = state.selectedExtensions
+
+            repository.indexDirectory(
+                treeUri = uri,
+                exts = exts
+            ) { processed, total ->
+                val progress = if (total == 0) 0f else processed.toFloat() / total.toFloat()
                 _uiState.update { it.copy(indexProgress = progress) }
             }
 
+            // 索引结束
             _uiState.update { it.copy(isIndexing = false) }
         }
     }
 }
-
-
 
 /**
  * 简单的 ViewModelFactory，用来把 Context → DB → Repository 注入到 ViewModel
@@ -141,8 +156,9 @@ class MainViewModelFactory(
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(MainViewModel::class.java)) {
-            val db = DocumentDatabaseHelper.getInstance(context.applicationContext)
-            val repo = DocumentRepository(db)
+            val appContext = context.applicationContext
+            val db = DocumentDatabaseHelper.getInstance(appContext)
+            val repo = DocumentRepository(db, appContext)
             @Suppress("UNCHECKED_CAST")
             return MainViewModel(repo) as T
         }
