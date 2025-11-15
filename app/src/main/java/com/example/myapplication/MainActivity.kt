@@ -1,10 +1,14 @@
 package com.example.myapplication
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -18,7 +22,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.documentfile.provider.DocumentFile
+import androidx.lifecycle.ViewModelProvider
 import com.example.myapplication.ui.theme.MyApplicationTheme
 
 /**
@@ -29,12 +34,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        val factory = MainViewModelFactory(this)
+        val vm = ViewModelProvider(this, factory)[MainViewModel::class.java]
+
         setContent {
             MyApplicationTheme {
-                val vm: MainViewModel = viewModel(
-                    factory = MainViewModelFactory(this@MainActivity)
-                )
-
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
@@ -60,6 +64,29 @@ fun DocumentSearchApp(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+
+    // 系统目录选择器（OpenDocumentTree）
+    val directoryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            // 申请持久化读写权限
+            try {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                            Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                )
+            } catch (_: SecurityException) {
+            }
+
+            val doc = DocumentFile.fromTreeUri(context, uri)
+            val name = doc?.name ?: uri.toString()
+            viewModel.setSelectedDirectory(uri, name)
+
+            Toast.makeText(context, "已选择目录：$name", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     Row(
         modifier = modifier.fillMaxSize()
@@ -96,7 +123,6 @@ fun DocumentSearchApp(
             )
         }
 
-        //yh代码
         // ---------- 右侧内容 ----------
         Box(
             modifier = Modifier
@@ -146,24 +172,19 @@ fun DocumentSearchApp(
                         isIndexing = uiState.isIndexing,
                         indexProgress = uiState.indexProgress,
                         onChooseDirectoryClick = {
-                            // 这里先用占位：真实项目用 SAF 让用户选目录
-                            Toast.makeText(
-                                context,
-                                "这里实现目录选择（暂用占位）",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                            viewModel.setSelectedDirectory("/storage/emulated/0/Documents")
+                            directoryLauncher.launch(null)
                         },
                         onChooseExtensionsClick = {
+                            // 目前固定为 txt，未来可以弹出多选框扩展 pdf/docx 等
                             Toast.makeText(
                                 context,
-                                "这里实现文件类型选择（暂用占位）",
+                                "目前默认索引 txt 文件，未来可扩展更多类型",
                                 Toast.LENGTH_SHORT
                             ).show()
-                            viewModel.setSelectedExtensions(listOf("pdf", "docx", "txt"))
+                            viewModel.setSelectedExtensions(listOf("txt"))
                         },
                         onStartIndexClick = {
-                            if (uiState.selectedDirectory == "未选择") {
+                            if (uiState.selectedDirectoryUri == null) {
                                 Toast.makeText(
                                     context,
                                     "请先选择要建立索引的目录",
