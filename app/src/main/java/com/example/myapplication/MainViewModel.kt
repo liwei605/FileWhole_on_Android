@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlin.math.min
 
 /**
  * UI 所有状态的统一数据类
@@ -26,7 +27,7 @@ data class MainUiState(
     // 系统设置 / 索引配置
     val selectedDirectory: String = "未选择",
     val selectedDirectoryUri: String? = null,
-    val availableExtensions: List<String> = listOf("txt", "pdf", "docx","doc","md","log","json"),
+    val availableExtensions: List<String> = listOf("txt", "pdf", "docx", "doc", "md", "log", "json"),
     val selectedExtensions: List<String> = listOf("txt"),
     val isIndexing: Boolean = false,
     val indexProgress: Float = 0f,
@@ -34,12 +35,15 @@ data class MainUiState(
     // 文件类型选择弹窗
     val isExtensionDialogVisible: Boolean = false,
 
-    // 预览弹窗
+    // 预览弹窗（带分页 & 高亮）
     val isPreviewDialogVisible: Boolean = false,
     val previewFileName: String = "",
-    val previewContent: String = "",
+    val previewContent: String = "",        // 当前页文本
     val isPreviewLoading: Boolean = false,
     val previewError: String? = null,
+    val previewPageIndex: Int = 0,          // 当前页（0-based）
+    val previewTotalPages: Int = 0,         // 总页数
+    val previewHighlightKeyword: String = "",
 
     // 索引管理板块
     val indexList: List<IndexSummary> = emptyList(),
@@ -57,6 +61,9 @@ class MainViewModel(
 
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
+
+    // 整个文件的完整内容，只保存在 ViewModel 内部，不放到 uiState 里，避免 Compose 一次性渲染超长文本
+    private var previewFullContent: String = ""
 
     /* ---------- 导航 ---------- */
 
@@ -178,50 +185,131 @@ class MainViewModel(
         }
     }
 
-    /* ---------- 预览弹窗 ---------- */
+    /* ---------- 预览弹窗：分页 + 高亮 ---------- */
 
     fun showPreview(result: SearchResult) {
+        // 当前搜索的内容关键词，用来做高亮
+        val keyword = _uiState.value.contentQuery.trim()
+
         viewModelScope.launch {
+            // 先让弹窗显示，并进入“加载中”状态
             _uiState.update {
                 it.copy(
                     isPreviewDialogVisible = true,
                     isPreviewLoading = true,
                     previewFileName = result.fileName,
                     previewContent = "",
-                    previewError = null
+                    previewError = null,
+                    previewPageIndex = 0,
+                    previewTotalPages = 0,
+                    previewHighlightKeyword = keyword
                 )
             }
 
             try {
                 val content = repository.getDocumentContentById(result.id) ?: ""
+                previewFullContent = content
+
+                val totalPages = calcPreviewPageCount(content)
+                val firstPageText = if (totalPages == 0) {
+                    "（内容为空或提取失败）"
+                } else {
+                    getPreviewPageText(0)
+                }
+
                 _uiState.update {
                     it.copy(
                         isPreviewLoading = false,
-                        previewContent = content.ifBlank { "（内容为空或提取失败）" },
-                        previewError = null
+                        previewContent = firstPageText,
+                        previewError = null,
+                        previewPageIndex = if (totalPages == 0) 0 else 0,
+                        previewTotalPages = totalPages
                     )
                 }
             } catch (e: Exception) {
+                previewFullContent = ""
                 _uiState.update {
                     it.copy(
                         isPreviewLoading = false,
                         previewContent = "",
-                        previewError = e.message ?: "读取内容失败"
+                        previewError = e.message ?: "读取内容失败",
+                        previewPageIndex = 0,
+                        previewTotalPages = 0
                     )
                 }
             }
         }
     }
 
+    /** 下一页 */
+    fun nextPreviewPage() {
+        val content = previewFullContent
+        if (content.isEmpty()) return
+
+        val state = _uiState.value
+        val current = state.previewPageIndex
+        val total = state.previewTotalPages
+        if (current >= total - 1) return
+
+        val newIndex = current + 1
+        val newText = getPreviewPageText(newIndex)
+        _uiState.update {
+            it.copy(
+                previewPageIndex = newIndex,
+                previewContent = newText
+            )
+        }
+    }
+
+    /** 上一页 */
+    fun prevPreviewPage() {
+        val content = previewFullContent
+        if (content.isEmpty()) return
+
+        val state = _uiState.value
+        val current = state.previewPageIndex
+        if (current <= 0) return
+
+        val newIndex = current - 1
+        val newText = getPreviewPageText(newIndex)
+        _uiState.update {
+            it.copy(
+                previewPageIndex = newIndex,
+                previewContent = newText
+            )
+        }
+    }
+
     fun dismissPreview() {
+        previewFullContent = ""
         _uiState.update {
             it.copy(
                 isPreviewDialogVisible = false,
                 isPreviewLoading = false,
                 previewContent = "",
-                previewError = null
+                previewError = null,
+                previewPageIndex = 0,
+                previewTotalPages = 0,
+                previewHighlightKeyword = ""
             )
         }
+    }
+
+    /** 计算总页数 */
+    private fun calcPreviewPageCount(content: String): Int {
+        if (content.isEmpty()) return 0
+        return (content.length + PREVIEW_PAGE_CHARS - 1) / PREVIEW_PAGE_CHARS
+    }
+
+    /** 取指定页的文本（基于字符数分页） */
+    private fun getPreviewPageText(pageIndex: Int): String {
+        val content = previewFullContent
+        if (content.isEmpty()) return ""
+        val pageSize = PREVIEW_PAGE_CHARS
+        val start = pageIndex * pageSize
+        if (start >= content.length) return ""
+        val end = min(start + pageSize, content.length)
+        return content.substring(start, end)
     }
 
     /* ---------- 索引管理板块：加载 t_index & t_error ---------- */
@@ -254,6 +342,11 @@ class MainViewModel(
                 }
             }
         }
+    }
+
+    companion object {
+        // 每页最多多少个字符，你可以根据体验再调（越小越安全）
+        private const val PREVIEW_PAGE_CHARS = 2000
     }
 }
 

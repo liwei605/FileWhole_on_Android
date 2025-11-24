@@ -31,7 +31,12 @@ import androidx.lifecycle.ViewModelProvider
 import com.example.myapplication.ui.theme.MyApplicationTheme
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -212,7 +217,7 @@ fun DocumentSearchApp(
                         }
                     )
 
-                    // 预览弹窗
+// 覆盖在搜索页面上的预览弹窗（分页 + 关键字高亮）
                     if (uiState.isPreviewDialogVisible) {
                         AlertDialog(
                             onDismissRequest = { viewModel.dismissPreview() },
@@ -228,16 +233,101 @@ fun DocumentSearchApp(
                                         CircularProgressIndicator()
                                     }
                                 } else {
-                                    val bodyText = uiState.previewError
-                                        ?: uiState.previewContent
+                                    val bodyText = uiState.previewError ?: uiState.previewContent
 
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .heightIn(min = 120.dp, max = 400.dp)
-                                            .verticalScroll(rememberScrollState())
-                                    ) {
-                                        Text(text = bodyText)
+                                    // 如果是错误信息，就直接显示
+                                    if (uiState.previewError != null) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .heightIn(min = 120.dp, max = 400.dp)
+                                                .verticalScroll(rememberScrollState())
+                                        ) {
+                                            Text(text = bodyText)
+                                        }
+                                    } else {
+                                        val keyword = uiState.previewHighlightKeyword
+                                        val scrollState = rememberScrollState()
+
+                                        // 构造带高亮的文本
+                                        val annotatedText = remember(bodyText, keyword) {
+                                            if (keyword.isBlank()) {
+                                                AnnotatedString(bodyText)
+                                            } else {
+                                                val lowerText = bodyText.lowercase()
+                                                val lowerKey = keyword.lowercase()
+                                                var startIndex = 0
+
+                                                buildAnnotatedString {
+                                                    while (true) {
+                                                        val index = lowerText.indexOf(lowerKey, startIndex)
+                                                        if (index < 0) {
+                                                            append(bodyText.substring(startIndex))
+                                                            break
+                                                        }
+                                                        // 普通部分
+                                                        append(bodyText.substring(startIndex, index))
+                                                        // 高亮部分
+                                                        withStyle(
+                                                            SpanStyle(
+                                                                color = Color.Red,
+                                                                fontWeight = FontWeight.Bold
+                                                            )
+                                                        ) {
+                                                            append(
+                                                                bodyText.substring(
+                                                                    index,
+                                                                    index + keyword.length
+                                                                )
+                                                            )
+                                                        }
+                                                        startIndex = index + keyword.length
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Column(
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .heightIn(min = 120.dp, max = 400.dp)
+                                                    .verticalScroll(scrollState)
+                                            ) {
+                                                Text(text = annotatedText)
+                                            }
+
+                                            // 分页控制
+                                            if (uiState.previewTotalPages > 1) {
+                                                Spacer(modifier = Modifier.height(8.dp))
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.SpaceBetween
+                                                ) {
+                                                    TextButton(
+                                                        onClick = { viewModel.prevPreviewPage() },
+                                                        enabled = uiState.previewPageIndex > 0
+                                                    ) {
+                                                        Text("上一页")
+                                                    }
+
+                                                    Text(
+                                                        text = "第 ${uiState.previewPageIndex + 1} / ${uiState.previewTotalPages} 页",
+                                                        style = MaterialTheme.typography.bodySmall
+                                                    )
+
+                                                    TextButton(
+                                                        onClick = { viewModel.nextPreviewPage() },
+                                                        enabled = uiState.previewPageIndex < uiState.previewTotalPages - 1
+                                                    ) {
+                                                        Text("下一页")
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             },
@@ -248,6 +338,7 @@ fun DocumentSearchApp(
                             }
                         )
                     }
+
                 }
 
                 MainSection.SETTINGS -> {
