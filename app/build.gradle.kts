@@ -12,7 +12,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.myapplication"
-        minSdk = 21
+        minSdk = 26
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
@@ -58,4 +58,11 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
+    implementation("androidx.documentfile:documentfile:1.0.1")
+    // PDFBox for Android（PDF 文本提取）
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+    // Apache POI 精简版（用于 docx 文本提取）
+    // Apache POI for DOCX
+    implementation("org.apache.poi:poi-ooxml:5.2.5")
+
 }

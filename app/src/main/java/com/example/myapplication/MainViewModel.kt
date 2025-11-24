@@ -1,11 +1,10 @@
 package com.example.myapplication
 
 import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,9 +25,27 @@ data class MainUiState(
 
     // 系统设置 / 索引配置
     val selectedDirectory: String = "未选择",
-    val selectedExtensions: List<String> = listOf("pdf", "docx", "txt"),
+    val selectedDirectoryUri: String? = null,
+    val availableExtensions: List<String> = listOf("txt", "pdf", "docx","doc","md","log","json"),
+    val selectedExtensions: List<String> = listOf("txt"),
     val isIndexing: Boolean = false,
-    val indexProgress: Float = 0f
+    val indexProgress: Float = 0f,
+
+    // 文件类型选择弹窗
+    val isExtensionDialogVisible: Boolean = false,
+
+    // 预览弹窗
+    val isPreviewDialogVisible: Boolean = false,
+    val previewFileName: String = "",
+    val previewContent: String = "",
+    val isPreviewLoading: Boolean = false,
+    val previewError: String? = null,
+
+    // 索引管理板块
+    val indexList: List<IndexSummary> = emptyList(),
+    val errorList: List<ErrorFileInfo> = emptyList(),
+    val isIndexInfoLoading: Boolean = false,
+    val indexInfoError: String? = null
 )
 
 /**
@@ -45,6 +62,18 @@ class MainViewModel(
 
     fun switchSection(section: MainSection) {
         _uiState.update { it.copy(currentSection = section) }
+
+        if (section == MainSection.INDEX) {
+            loadIndexManagement()
+        }
+    }
+
+    fun openExtensionDialog() {
+        _uiState.update { it.copy(isExtensionDialogVisible = true) }
+    }
+
+    fun dismissExtensionDialog() {
+        _uiState.update { it.copy(isExtensionDialogVisible = false) }
     }
 
     /* ---------- 搜索板块 ---------- */
@@ -96,53 +125,147 @@ class MainViewModel(
             parts += "content:$content"
         }
         if (fileName.isNotBlank()) {
-            // 文件名前缀匹配
             parts += "file_name:${fileName}*"
         }
         return parts.joinToString(" AND ")
     }
 
-    /* ---------- 系统设置 / 索引板块 ---------- */
+    /* ---------- 系统设置 / 索引 ---------- */
 
-    fun setSelectedDirectory(path: String) {
-        _uiState.update { it.copy(selectedDirectory = path) }
+    fun setSelectedDirectory(uri: Uri, displayName: String) {
+        _uiState.update {
+            it.copy(
+                selectedDirectory = displayName,
+                selectedDirectoryUri = uri.toString()
+            )
+        }
     }
 
-    fun setSelectedExtensions(exts: List<String>) {
-        _uiState.update { it.copy(selectedExtensions = exts) }
+    fun toggleExtension(ext: String) {
+        _uiState.update { state ->
+            val current = state.selectedExtensions.toMutableSet()
+            if (current.contains(ext)) {
+                current.remove(ext)
+            } else {
+                current.add(ext)
+            }
+            state.copy(selectedExtensions = current.toList())
+        }
     }
 
-    /** 索引进度模拟（以后可以换成真实目录扫描逻辑） */
+    /** 开始构建索引 */
     fun startIndexing() {
         val state = _uiState.value
         if (state.isIndexing) return
 
-        viewModelScope.launch(Dispatchers.IO) {
+        val uriString = state.selectedDirectoryUri ?: return
+
+        viewModelScope.launch {
             _uiState.update { it.copy(isIndexing = true, indexProgress = 0f) }
 
-            repeat(20) { step ->
-                delay(150)
-                val progress = (step + 1) / 20f.toFloat()
+            val uri = Uri.parse(uriString)
+            val exts = state.selectedExtensions
+
+            repository.indexDirectory(
+                treeUri = uri,
+                exts = exts
+            ) { processed, total ->
+                val progress = if (total == 0) 0f else processed.toFloat() / total.toFloat()
                 _uiState.update { it.copy(indexProgress = progress) }
             }
 
             _uiState.update { it.copy(isIndexing = false) }
         }
     }
+
+    /* ---------- 预览弹窗 ---------- */
+
+    fun showPreview(result: SearchResult) {
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isPreviewDialogVisible = true,
+                    isPreviewLoading = true,
+                    previewFileName = result.fileName,
+                    previewContent = "",
+                    previewError = null
+                )
+            }
+
+            try {
+                val content = repository.getDocumentContentById(result.id) ?: ""
+                _uiState.update {
+                    it.copy(
+                        isPreviewLoading = false,
+                        previewContent = content.ifBlank { "（内容为空或提取失败）" },
+                        previewError = null
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isPreviewLoading = false,
+                        previewContent = "",
+                        previewError = e.message ?: "读取内容失败"
+                    )
+                }
+            }
+        }
+    }
+
+    fun dismissPreview() {
+        _uiState.update {
+            it.copy(
+                isPreviewDialogVisible = false,
+                isPreviewLoading = false,
+                previewContent = "",
+                previewError = null
+            )
+        }
+    }
+
+    /* ---------- 索引管理板块：加载 t_index & t_error ---------- */
+
+    private fun loadIndexManagement() {
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isIndexInfoLoading = true,
+                    indexInfoError = null
+                )
+            }
+            try {
+                val indexes = repository.loadIndexSummaries()
+                val errors = repository.loadErrorFiles()
+                _uiState.update {
+                    it.copy(
+                        isIndexInfoLoading = false,
+                        indexList = indexes,
+                        errorList = errors,
+                        indexInfoError = null
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isIndexInfoLoading = false,
+                        indexInfoError = e.message ?: "加载索引信息失败"
+                    )
+                }
+            }
+        }
+    }
 }
 
-
-
-/**
- * 简单的 ViewModelFactory，用来把 Context → DB → Repository 注入到 ViewModel
- */
+/** 简单的 ViewModelFactory，用来把 Context → DB → Repository 注入到 ViewModel */
 class MainViewModelFactory(
     private val context: Context
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(MainViewModel::class.java)) {
-            val db = DocumentDatabaseHelper.getInstance(context.applicationContext)
-            val repo = DocumentRepository(db)
+            val appContext = context.applicationContext
+            val db = DocumentDatabaseHelper.getInstance(appContext)
+            val repo = DocumentRepository(db, appContext)
             @Suppress("UNCHECKED_CAST")
             return MainViewModel(repo) as T
         }
