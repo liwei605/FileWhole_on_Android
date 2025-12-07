@@ -1,5 +1,12 @@
 package com.example.myapplication
 
+import android.graphics.BitmapFactory
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
+// 如果你用拉丁语言版本就是：
+// import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import kotlinx.coroutines.tasks.await
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import org.apache.poi.xwpf.usermodel.XWPFDocument
 import com.tom_roush.pdfbox.pdmodel.PDDocument
@@ -246,6 +253,9 @@ class DocumentRepository(
             "docx", "doc" ->
                 DocxFileContentReader(context)
 
+            "jpg","jpeg","png","webp" ->
+                ImageFileContentReader(context)
+
             else ->
                 TextFileContentReader(context)   // 默认按文本尝试读取
         }
@@ -280,6 +290,16 @@ class DocumentRepository(
     ) : FileContentReader {
         override suspend fun read(uri: Uri): String? {
             return readTextFromDocx(uri)
+        }
+    }
+
+    /** 图片 OCR 读取器：针对 jpg/jpeg/png/webp 等 */
+    private inner class ImageFileContentReader(
+        private val context: Context
+    ) : FileContentReader {
+
+        override suspend fun read(uri: Uri): String? {
+            return readTextFromImageOcr(uri)
         }
     }
 
@@ -352,5 +372,39 @@ class DocumentRepository(
         }
     }
 
+    /**
+     * 使用 ML Kit 从图片中提取文字（OCR）
+     *
+     * 这里以“中文识别”为例：
+     *   - 依赖：com.google.mlkit:text-recognition-chinese:16.0.1
+     * 如果你想识别英文/数字/拉丁系，可以改用 TextRecognizerOptions.DEFAULT_OPTIONS。
+     */
+    private suspend fun readTextFromImageOcr(uri: Uri): String? {
+        return try {
+            val inputStream = context.contentResolver.openInputStream(uri) ?: return null
+
+            val bitmap = inputStream.use { stream ->
+                BitmapFactory.decodeStream(stream)
+            } ?: return null
+
+            // 构造 ML Kit 的 InputImage
+            val image = InputImage.fromBitmap(bitmap, 0)
+
+            // ★ 中文 OCR 识别器，如果只需要英文，可以改用 latin 版本
+            val recognizer = TextRecognition.getClient(
+                ChineseTextRecognizerOptions.Builder().build()
+            )
+            // 通过协程 await()，不会阻塞线程
+            val result = recognizer.process(image).await()
+
+            val text = result.text
+            if (text.isNullOrBlank()) null else text
+        } catch (e: Exception) {
+            // 失败时返回 null，会在 indexDirectory 那里按你的逻辑处理：
+            //   - 作为错误插 t_error
+            //   - 或者插一个空字符串
+            null
+        }
+    }
 
 }
