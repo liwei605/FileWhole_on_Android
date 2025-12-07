@@ -31,6 +31,7 @@ import androidx.lifecycle.ViewModelProvider
 import com.example.myapplication.ui.theme.MyApplicationTheme
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
@@ -73,6 +74,13 @@ fun DocumentSearchApp(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+
+    //这里新增：监听 ViewModel 的 toastEvent 并弹出 Toast
+    LaunchedEffect(Unit) {
+        viewModel.toastEvent.collect { msg ->
+            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+        }
+    }
 
     // 系统目录选择器（OpenDocumentTree）
     val directoryLauncher = rememberLauncherForActivityResult(

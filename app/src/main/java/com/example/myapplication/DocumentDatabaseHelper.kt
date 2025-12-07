@@ -181,6 +181,18 @@ class DocumentDatabaseHelper private constructor(context: Context) :
         // 目前不做版本升级，后续如有需要再实现
     }
 
+    /** 判断某个目录是否已经建立过索引 */
+    fun hasIndex(path: String): Boolean {
+        val db = readableDatabase
+        val sql = "SELECT COUNT(*) FROM t_index WHERE path = ?"
+        db.rawQuery(sql, arrayOf(path)).use { c ->
+            if (c.moveToFirst()) {
+                return c.getInt(0) > 0
+            }
+        }
+        return false
+    }
+
     // --------- t_content & t_content_idx：核心内容表 ---------
 
     /** 往 t_content 中插入一个文件记录（触发器会自动更新 t_content_idx） */
@@ -508,6 +520,8 @@ class DocumentDatabaseHelper private constructor(context: Context) :
         }
     }
 }
+
+
 
 /** 搜索结果 */
 data class SearchResult(
