@@ -70,4 +70,6 @@ dependencies {
     // implementation "com.google.mlkit:text-recognition:16.0.1"
     // 协程对 Task 的扩展，方便用 suspend/await
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.2")
+    //Vosk 有 Android AAR 包用于音频提取
+    //implementation("com.alphacephei:vosk-android:0.3.32")现在还不需要音频这部分
 }
