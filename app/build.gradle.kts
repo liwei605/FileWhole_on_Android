@@ -64,5 +64,10 @@ dependencies {
     // Apache POI 精简版（用于 docx 文本提取）
     // Apache POI for DOCX
     implementation("org.apache.poi:poi-ooxml:5.2.5")
-
+    // ML Kit 文字识别（中文为主，可以根据需要加其它语种）
+    implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
+    // 如果你只想识别英文/拉丁字符，也可以用：
+    // implementation "com.google.mlkit:text-recognition:16.0.1"
+    // 协程对 Task 的扩展，方便用 suspend/await
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.2")
 }

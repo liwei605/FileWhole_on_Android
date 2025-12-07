@@ -29,7 +29,7 @@ data class MainUiState(
     // 系统设置 / 索引配置
     val selectedDirectory: String = "未选择",
     val selectedDirectoryUri: String? = null,
-    val availableExtensions: List<String> = listOf("txt", "pdf", "docx", "doc", "md", "log", "json"),
+    val availableExtensions: List<String> = listOf("txt", "pdf", "docx", "doc", "md", "log", "json","jpg","jpeg","png","webp"),
     val selectedExtensions: List<String> = listOf("txt"),
     val isIndexing: Boolean = false,
     val indexProgress: Float = 0f,
