@@ -124,6 +124,11 @@ class DocumentRepository(
             treeUri.path ?: treeUri.toString()
         }
 
+        // ---- 新增：如果已经存在索引，直接抛异常阻止 ----
+        if (db.hasIndex(indexPath)) {
+            throw IllegalStateException("该目录已建立过索引，无需重复建立")
+        }
+
         val startTime = System.currentTimeMillis()
 
         // 索引刚开始：写一条“进行中”的 t_index 记录

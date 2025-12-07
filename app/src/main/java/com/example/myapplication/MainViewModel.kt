@@ -5,8 +5,10 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -64,6 +66,13 @@ class MainViewModel(
 
     // 整个文件的完整内容，只保存在 ViewModel 内部，不放到 uiState 里，避免 Compose 一次性渲染超长文本
     private var previewFullContent: String = ""
+
+    private val _toastEvent = MutableSharedFlow<String>()
+    val toastEvent = _toastEvent.asSharedFlow()
+
+    private suspend fun sendToast(msg: String) {
+        _toastEvent.emit(msg)
+    }
 
     /* ---------- 导航 ---------- */
 
@@ -173,17 +182,31 @@ class MainViewModel(
             val uri = Uri.parse(uriString)
             val exts = state.selectedExtensions
 
-            repository.indexDirectory(
-                treeUri = uri,
-                exts = exts
-            ) { processed, total ->
-                val progress = if (total == 0) 0f else processed.toFloat() / total.toFloat()
-                _uiState.update { it.copy(indexProgress = progress) }
+            try {
+                repository.indexDirectory(
+                    treeUri = uri,
+                    exts = exts
+                ) { processed, total ->
+                    val progress = if (total == 0) 0f else processed.toFloat() / total.toFloat()
+                    _uiState.update { it.copy(indexProgress = progress) }
+                }
+
+            } catch (e: IllegalStateException) {
+                // 重复索引的友好提示
+                _uiState.update { it.copy(isIndexing = false) }
+                sendToast("该目录已建立索引，无需重复建立")
+                return@launch
+
+            } catch (e: Exception) {
+                _uiState.update { it.copy(isIndexing = false) }
+                sendToast("索引失败：" + (e.message ?: e.toString()))
+                return@launch
             }
 
             _uiState.update { it.copy(isIndexing = false) }
         }
     }
+
 
     /* ---------- 预览弹窗：分页 + 高亮 ---------- */
 
