@@ -511,16 +511,24 @@ class MainActivity : ComponentActivity() {
             containerColor = Color.White
         ) {
             items.forEach { item ->
+                val isSelected = currentSection == item.section
                 NavigationBarItem(
-                    selected = currentSection == item.section,
+                    selected = isSelected,
                     onClick = { onSectionSelected(item.section) },
+                    alwaysShowLabel = true,
                     icon = {
                         Icon(
                             imageVector = item.icon,
-                            contentDescription = item.label
+                            contentDescription = item.label,
+                            tint = if (isSelected) Color.White else Color.Gray
                         )
                     },
-                    label = { Text(item.label) },
+                    label = {
+                        Text(
+                            text = item.label,
+                            color = if (isSelected) Color.White else Color.Gray
+                        )
+                    },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = Color.White,
                         selectedTextColor = Color.White,
