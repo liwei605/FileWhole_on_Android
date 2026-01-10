@@ -10,11 +10,7 @@ FileWhole是一个全文检索软件，包含Windows版，安卓版和鸿蒙版
 
 技术支持：
 
-重庆大学  Chenxianzhang  计算机学院  
-
-重庆大学  Liwei  计算机学院           E-mail:  liwei教育邮箱
-
-重庆大学  Yh     计算机学院
+重庆大学 计算机学院
 
 
 1. 首次使用时：
